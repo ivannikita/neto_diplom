@@ -16,7 +16,7 @@ spec:
    spec:
     containers:
       - name: app
-        image: ivannikita/netrology_diplom:v0.3
+        image: ivannikita/netrology_diplom:v0.4
         ports:
           - containerPort: 80
         env:
