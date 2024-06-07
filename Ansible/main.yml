@@ -1,0 +1,186 @@
+- name: Install kuber cluster
+  hosts: all
+  become: true
+  tasks:
+  - name: Run the equivalent of "apt-get update" as a separate step
+    ansible.builtin.apt:
+     update_cache: true
+  - name: Install dependense packages
+    become: true
+    ansible.builtin.package:
+     name: gpg
+     state: present
+  - name: Create directory
+    file:
+     path: /etc/apt/keyrings
+     state: directory
+     owner: root
+     group: root
+     mode: 0775
+  - name: One way to avoid apt_key once it is removed from your distro, armored keys should use .asc extension, binary should use .gpg
+    block:
+    - name: import the k8s apt key
+      apt_key:
+        url: "https://pkgs.k8s.io/core:/stable:/v1.28/deb/Release.key"
+        state: present
+
+    - name: K8Srepo | apt source
+      ansible.builtin.apt_repository:
+        repo: "deb https://pkgs.k8s.io/core:/stable:/v1.28/deb/ /"
+        state: present
+    - name: Run the equivalent of "apt-get update" as a separate step
+      ansible.builtin.apt:
+       update_cache: true
+    - name: download and untar containerd
+      ansible.builtin.unarchive:
+        src: https://github.com/containerd/containerd/releases/download/v1.7.16/containerd-1.7.16-linux-amd64.tar.gz
+        dest: /usr/local/bin
+        remote_src: yes
+        extra_opts: [--strip-components=1]
+    - name: Download file with custom
+      ansible.builtin.get_url:
+        url: https://raw.githubusercontent.com/containerd/containerd/main/containerd.service
+        dest: /etc/systemd/system/containerd.service
+    - name: Create folder fo containerd
+      file:
+        path: /etc/containerd/
+        state: directory
+        owner: root
+        group: root
+        mode: 0775
+    - name: generate containerd config
+      shell: containerd config default > /etc/containerd/config.toml
+    - name: Ensure SELinux is set to enforcing mode
+      ansible.builtin.lineinfile:
+         path: /etc/containerd/config.toml
+         regexp: 'SystemdCgroup='
+         insertafter: '[plugins."io.containerd.grpc.v1.cri".containerd.untrusted_workload_runtime.options]'
+         line: SystemdCgroup=true
+    - name: Create folder fo cni
+      file:
+        path: /opt/cni/bin
+        state: directory
+        owner: root
+        group: root
+        recurse: yes
+        mode: 0775  
+    - name: Download file runc
+      ansible.builtin.get_url:
+        url: https://github.com/opencontainers/runc/releases/download/v1.1.12/runc.amd64
+        dest: /tmp/runc.amd64
+    - name: install runc
+      shell: install -m 755 /tmp/runc.amd64 /usr/local/sbin/runc
+    - name: download and untar cni
+      ansible.builtin.unarchive:
+        src: https://github.com/containernetworking/plugins/releases/download/v1.4.1/cni-plugins-linux-amd64-v1.4.1.tgz
+        dest: /opt/cni/bin
+        remote_src: yes
+        extra_opts: [--strip-components=1]
+
+    - name: Install k8s packages
+      become: true
+      ansible.builtin.package:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - kubelet
+        - kubeadm
+        - kubectl
+    - name: enable service
+      ansible.builtin.service:
+       name: "{{ item }}"
+       enabled: true
+       state: restarted
+       daemon_reload: yes
+      loop:
+        - kubelet
+        - containerd
+
+    - name: Disable SWAP since kubernetes can't work with swap enabled (1/2)
+      shell: |
+        swapoff -a
+    - name: Disable SWAP in fstab since kubernetes can't work with swap enabled (2/2)
+      replace:
+        path: /etc/fstab
+        regexp: '^([^#].*?\sswap\s+sw\s+.*)$'
+        replace: '# \1'
+    - name: Add the br_netfilter module
+      modprobe:
+       name: br_netfilter
+       state: present
+    - name: set sysctl parametrs
+      ansible.posix.sysctl:
+       name: "{{ item.param }}"
+       value: "{{ item.value }}"
+       sysctl_file: /etc/sysctl.conf
+       reload: false
+       state: present
+      loop:
+         - {param:  'net.bridge.bridge-nf-call-iptables' , value: 1}
+         - {param:  'net.bridge.bridge-nf-call-arptables' , value: 1}
+         - {param:  'net.bridge.bridge-nf-call-ip6tables' , value: 1}
+    - name: set sysctl parametrs and reload sysctl
+      ansible.posix.sysctl:
+       name: 'net.ipv4.ip_forward'
+       value: 1
+       sysctl_set: true
+       state: present
+       reload: true
+  - name: One way to avoid apt_key once it is removed from your distro, armored keys should use .asc extension, binary should use .gpg
+    block:
+     - name: initialize the cluster
+       shell: kubeadm init --pod-network-cidr=10.244.0.0/16 >> cluster_initialized.txt
+       args:
+         chdir: $HOME
+         creates: cluster_initialized.txt
+     - name: Create folder .kube
+       file:
+        path: "$HOME/.kube/"
+        state: directory
+        owner: root
+        group: root
+        recurse: yes
+        mode: 0775  
+     - name: copy admin.conf to user's kube config
+       copy:
+        src: /etc/kubernetes/admin.conf
+        dest: "$HOME/.kube/config"
+        remote_src: yes
+        owner: "{{ ansible_user_id }}"
+ 
+     - name: install Pod network
+       become: yes
+       shell: kubectl apply -f https://github.com/coreos/flannel/raw/master/Documentation/kube-flannel.yml >> pod_network_setup.txt
+       args:
+        chdir: $HOME
+        creates: pod_network_setup.txt
+     - name: get join command
+       shell: "kubeadm token create --print-join-command"
+       register: join_command_raw
+       args:
+        chdir: $HOME
+       # async: 100
+     - name: set join command
+       set_fact:
+        join_command: "{{ join_command_raw.stdout_lines[0] }}"
+       delegate_to: "{{ item }}"
+       with_items: "{{ play_hosts }}"
+       run_once: yes
+     - name: get kube connect config to local machine
+       fetch:
+        src: /etc/kubernetes/admin.conf
+        dest: ../../.kube/config_diplom
+        flat: yes
+    when: type == "master"
+
+  - name: One way to avoid apt_key once it is removed from your distro, armored keys should use .asc extension, binary should use .gpg
+    block:
+       - name: debug
+         debug: 
+          msg: "{{ join_command }}"
+       - name: join cluster 
+         shell: "{{ join_command }} >> node_joined.txt"
+         args:
+          chdir: $HOME
+          creates: node_joined.txt
+    when: type == "slave"

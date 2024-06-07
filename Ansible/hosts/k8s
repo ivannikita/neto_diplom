@@ -1,0 +1,5 @@
+#[master]
+#k8s1.neto.local ansible_host=192.168.39.55 ansible_user=root type=master
+#[worker]
+#k8s2.neto.local ansible_host=192.168.39.54 ansible_user=root type=worker
+#k8s3.neto.local ansible_host=192.168.39.53 ansible_user=root type=worker
