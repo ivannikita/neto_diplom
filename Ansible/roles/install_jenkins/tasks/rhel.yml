@@ -1,0 +1,41 @@
+---
+
+- name: Install JDK
+  become: true
+  ansible.builtin.package:
+        name: "{{ java_packages_rhel }}"
+        state: present
+
+- name: Get repo Jenkins
+  become: true
+  ansible.builtin.get_url:
+        url: https://pkg.jenkins.io/redhat-stable/jenkins.repo
+        dest: /etc/yum.repos.d/jenkins.repo
+        mode: 644
+        validate_certs: false
+- name: Add Jenkins key
+  become: true
+  ansible.builtin.rpm_key:
+        key: https://pkg.jenkins.io/redhat-stable/jenkins.io-2023.key
+        state: present
+        validate_certs: false
+- name: Install epel-release
+  become: true
+  ansible.builtin.yum:
+        name: epel-release
+        state: present
+- name: Install Jenkins and requirements
+  become: true
+  ansible.builtin.yum:
+        name:
+             - jenkins
+             - git
+        state: present
+  register: jenkins_installed
+- name: Start Jenkins
+  become: true
+  ansible.builtin.systemd:
+        name: jenkins
+        state: restarted
+        enabled: true
+  when: jenkins_installed is changed

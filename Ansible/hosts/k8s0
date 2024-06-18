@@ -1,0 +1,2 @@
+[k8s]
+kube1.neto.local ansible_host=172.16.1.10 ansible_user=ubuntu type=master ansible_ssh_common_args='-J ubuntu@158.160.109.249' kub_ip=51.250.77.228

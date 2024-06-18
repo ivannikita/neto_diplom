@@ -1,0 +1,138 @@
+---
+- name: Install JDK
+  become: true
+  ansible.builtin.package:
+    name: "{{ java_packages_deb }}"
+    state: present
+
+- name: Add Jenkins apt repository key.
+  ansible.builtin.get_url:
+    url: https://pkg.jenkins.io/debian-stable/jenkins.io-2023.key
+    dest: /usr/share/keyrings/jenkins-keyring.asc
+    mode: "0644"
+    force: true
+
+- name: Jenrepo | apt source
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/usr/share/keyrings/jenkins-keyring.asc] https://pkg.jenkins.io/debian-stable binary/"
+    state: present
+    validate_certs: false
+    update_cache: true
+
+- name: Run the equivalent of "apt-get update" as a separate step
+  ansible.builtin.apt:
+    update_cache: true
+
+- name: install jenkins
+  apt:
+    pkg:
+      - jenkins
+
+- name: restart jenkins
+  ansible.builtin.service:
+    name: jenkins
+    enabled: true
+    state: restarted
+
+- name: get first admin pass
+  slurp:
+    src: "/var/lib/jenkins/secrets/initialAdminPassword"
+  register: admin_pass
+  ignore_errors: true
+
+- name: show pass
+  debug:
+    msg: "{{ admin_pass['content'] | b64decode }}"
+  when: admin_pass.content is defined
+
+  # install nginx
+
+- name: Check that cert.crt exists
+  stat:
+    path: /tmp/fetched/{{ inventory_hostname }}.crt
+  register: crt_exist
+  delegate_to: localhost
+  become: false
+  tags: install_cert
+
+- name: Check that cert.key exists
+  stat:
+    path: /tmp/fetched/{{ inventory_hostname }}.key
+  register: key_exists
+  delegate_to: localhost
+  become: false
+  tags: install_cert
+
+- name: Create directory
+  file:
+    path: /var/lib/{{ service_jen }}/ssl
+    state: directory
+    owner: root
+    group: root
+    mode: 0775
+  tags: install_cert
+
+# копируем созданные фриипой серты
+- block:
+    - name: copy certs to server jenkins
+      copy:
+        src: "{{ item }}"
+        dest: /var/lib/{{ service_jen }}/ssl
+      loop:
+        - /tmp/fetched/{{ inventory_hostname }}.crt
+        - /tmp/fetched/{{ inventory_hostname }}.key
+      tags: install_cert
+
+    - name: copy certs to server git and report
+      copy:
+        src: "{{ item }}"
+        dest: /etc/nginx/ssl
+      loop:
+        - /tmp/fetched/report.iva-cp.ru.crt
+        - /tmp/fetched/report.iva-cp.ru.key
+        - /tmp/fetched/git.iva-cp.ru.crt
+        - /tmp/fetched/git.iva-cp.ru.key
+      tags: install_cert
+
+  when: crt_exist.stat.exists and key_exists.stat.exists
+  tags: install_cert
+# если нет сгенерированых сертов делаем самоподписные
+- block:
+    - name: Generate an OpenSSL Private Key
+      openssl_privatekey:
+        path: /var/lib/{{ service_jen }}/ssl/{{ inventory_hostname }}.key
+        size: 4096
+
+    - name: Generate an OpenSSL Certificate Signing Request
+      openssl_csr:
+        path: /var/lib/{{ service_jen }}/ssl/{{ inventory_hostname }}.csr
+        privatekey_path: /var/lib/{{ service_jen }}/ssl/{{ inventory_hostname }}.key
+        common_name: "{{ inventory_hostname }}"
+        country_name: RU
+        organization_name: "{{ inventory_hostname }}"
+        organizational_unit_name: "IT"
+
+    - name: Generate a Self Signed OpenSSL certificate
+      openssl_certificate:
+        path: /var/lib/{{ service_jen }}/ssl/{{ inventory_hostname }}.crt
+        privatekey_path: /var/lib/{{ service_jen }}/ssl/{{ inventory_hostname }}.key
+        csr_path: /var/lib/{{ service_jen }}/ssl/{{ inventory_hostname }}.csr
+        provider: selfsigned
+  when: crt_exist.stat.exists == false and key_exists.stat.exists == false
+  tags: install_cert
+
+- name: copy nginx config
+  action: "template src=nginx.conf.j2 dest=/etc/nginx/sites-available/jenkins.conf owner=root group=root mode=0664"
+
+- name: enable jenkins site
+  ansible.builtin.file:
+    src: /etc/nginx/sites-available/jenkins.conf
+    dest: /etc/nginx/sites-enabled/jenkins.conf
+    state: link
+
+- name: restart nginx
+  ansible.builtin.service:
+    name: nginx
+    enabled: true
+    state: restarted
+  tags: install_cert

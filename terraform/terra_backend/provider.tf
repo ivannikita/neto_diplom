@@ -10,7 +10,7 @@ terraform {
 }
 
 resource "yandex_iam_service_account" "neto" {
-  name      = "service-netology-diplom"
+  name      = var.service_akk
   folder_id = yandex_resourcemanager_folder.neto-folder.id
 }
 
@@ -32,7 +32,7 @@ resource "yandex_resourcemanager_folder_iam_member" "neto-configurer" {
 resource "yandex_storage_bucket" "ter-data" {
   access_key = yandex_iam_service_account_static_access_key.neto-static-key.access_key
   secret_key = yandex_iam_service_account_static_access_key.neto-static-key.secret_key
-  bucket     = "ter-data-netology1"
+  bucket     = var.s3_bucket
   # cors_rule {
   #   allowed_headers = ["*"]
   #   allowed_methods = ["PUT", "POST"]
@@ -53,8 +53,8 @@ resource "yandex_storage_bucket" "ter-data" {
         "Effect": "Allow",
         "Principal": "*",
         "Resource": [
-            "arn:aws:s3:::ter-data-netology1/*",
-            "arn:aws:s3:::ter-data-netology1"
+            "arn:aws:s3:::${var.s3_bucket}/*",
+            "arn:aws:s3:::${var.s3_bucket}"
         ]
     },
     "Version": "2012-10-17"

@@ -126,10 +126,10 @@
        sysctl_set: true
        state: present
        reload: true
-  - name: One way to avoid apt_key once it is removed from your distro, armored keys should use .asc extension, binary should use .gpg
+  - name: init kubernetes
     block:
      - name: initialize the cluster
-       shell: kubeadm init --pod-network-cidr=10.244.0.0/16 >> cluster_initialized.txt
+       shell: kubeadm init --pod-network-cidr=10.244.0.0/16  --apiserver-cert-extra-sans "{{ kub_ip }}" >> cluster_initialized.txt
        args:
          chdir: $HOME
          creates: cluster_initialized.txt
@@ -171,9 +171,13 @@
         src: /etc/kubernetes/admin.conf
         dest: ../../.kube/config_diplom
         flat: yes
+     - name: install ingress-nginx
+       shell: "kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.1.1/deploy/static/provider/baremetal/deploy.yaml"
+       args:
+        chdir: $HOME
     when: type == "master"
 
-  - name: One way to avoid apt_key once it is removed from your distro, armored keys should use .asc extension, binary should use .gpg
+  - name: join node to cluster
     block:
        - name: debug
          debug: 
@@ -184,3 +188,5 @@
           chdir: $HOME
           creates: node_joined.txt
     when: type == "slave"
+
+    

@@ -1,0 +1,2 @@
+[nat]
+nat-machine.neto.local ansible_host=158.160.109.249 ansible_user=ubuntu

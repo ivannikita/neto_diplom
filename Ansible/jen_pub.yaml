@@ -1,0 +1,22 @@
+- name: config nginx rproxy
+  hosts: all
+  become: true
+  tasks:
+  - name: install nginx
+    apt:
+     pkg:
+      - nginx  
+  - name: copy nginx config
+    action: "template src=nginx.conf.j2 dest=/etc/nginx/sites-available/jenkins.conf owner=root group=root mode=0664"
+
+  - name: enable jenkins site
+    ansible.builtin.file:
+     src: /etc/nginx/sites-available/jenkins.conf
+     dest: /etc/nginx/sites-enabled/jenkins.conf
+     state: link
+
+  - name: restart nginx
+    ansible.builtin.service:
+      name: nginx
+      enabled: true
+      state: restarted

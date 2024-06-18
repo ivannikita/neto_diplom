@@ -1,0 +1,11 @@
+---
+- name: Nginx | Check Operation system
+  ansible.builtin.include_tasks: 
+     file: rhel.yml
+  when: ansible_os_family == "RedHat"
+
+- name: Nginx | Check Operation system
+  ansible.builtin.include_tasks:
+     file: deb.yml
+  when: ansible_os_family == "Debian"
+  

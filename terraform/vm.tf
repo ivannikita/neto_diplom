@@ -1,31 +1,4 @@
-variable "instances" {
-  default = {
-    "0" = {
-      name = "kube1"
-      ip   = "172.16.1.10"
-      type = "master"
-      zone = "ru-central1-a"
-      net  = "0"
-      nat  = true
-    },
-    "1" = {
-      name = "kube2"
-      ip   = "172.16.2.10"
-      type = "slave"
-      zone = "ru-central1-b"
-      net  = "1"
-      nat  = false
-    },
-    "2" = {
-      name = "kube3"
-      ip   = "172.16.3.10"
-      type = "slave"
-      zone = "ru-central1-d"
-      net  = "2"
-      nat  = false
-    },
-  }
-}
+
 
 resource "yandex_compute_image" "kuber_machine" {
   source_image = "fd8oc4qnq5kg274e0vbn"
@@ -68,6 +41,6 @@ resource "yandex_compute_instance" "kuber_machine" {
 }
 resource "local_file" "k8s" {
   count    = 3
-  content  = templatefile("${path.module}/host.tpl", { "name" : var.instances[count.index].name, "ip" : yandex_compute_instance.kuber_machine[count.index].network_interface.*.ip_address[0], group : "k8s", user : "ubuntu", type : "${var.instances[count.index].type}", "ip_nat" : yandex_compute_instance.natinstancemachne.network_interface.0.nat_ip_address })
+  content  = templatefile("${path.module}/host.tpl", { "name" : var.instances[count.index].name, "ip" : yandex_compute_instance.kuber_machine[count.index].network_interface.*.ip_address[0], group : "k8s", user : "ubuntu", type : "${var.instances[count.index].type}", "ip_nat" : yandex_compute_instance.natinstancemachne.network_interface.0.nat_ip_address, "kub_ip" : yandex_compute_instance.kuber_machine[0].network_interface.0.nat_ip_address })
   filename = pathexpand("~/neto_diplom/Ansible/hosts/k8s${count.index}")
 }
