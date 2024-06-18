@@ -70,4 +70,7 @@ id сервиснуго аккаунта и папки берем из output п
 	kubectl apply --server-side -f setup --kubeconfig="~/.kube/config_diplom"
 	kubectl apply --server-side -f . --kubeconfig="~/.kube/config_diplom"
 	
-   
+### Доступы
+	jenkins.digitum.su netology aeraexeiRaij6i  
+	http://dip.digitum.su  приложение
+	http://dip.digitum.su:3000  мониторинг
